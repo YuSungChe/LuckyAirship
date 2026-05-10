@@ -92,24 +92,6 @@ body{font-family:"PingFang SC","Noto Sans SC","Helvetica Neue",sans-serif;
 .ball-md-circle{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
 .ball-md-sub{font-size:9px;color:var(--text2)}
 .divider{height:1px;background:var(--border);margin:14px 0}
-.model-grid{display:flex;flex-direction:column;gap:6px;margin-top:4px}
-.model-row{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;background:var(--bg3);border:1px solid var(--border)}
-.model-row.active{border-color:#2a4a8a}
-.model-row.suppressed{opacity:.4}
-.model-badge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;flex-shrink:0;width:36px;text-align:center}
-.model-name{font-size:11px;flex:1;font-weight:600}
-.model-track{width:60px;height:5px;background:var(--bg2);border-radius:3px;overflow:hidden;flex-shrink:0}
-.model-fill{height:100%;border-radius:3px}
-.model-acc{font-size:11px;font-weight:700;width:32px;text-align:right;flex-shrink:0}
-.model-vs{font-size:9px;flex-shrink:0;width:28px;text-align:right}
-.bsoe-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}
-.bsoe-card{border-radius:12px;padding:12px 14px;border:1px solid var(--border);background:var(--bg3);display:flex;flex-direction:column;gap:5px}
-.bsoe-row{display:flex;align-items:center;justify-content:space-between}
-.bsoe-title{font-size:11px;color:var(--text2);font-weight:600}
-.bsoe-bar-wrap{flex:1;margin:0 8px;height:6px;background:var(--bg2);border-radius:3px;overflow:hidden}
-.bsoe-bar{height:100%;border-radius:3px;transition:width .4s ease}
-.bsoe-pct{font-size:13px;font-weight:800;min-width:34px;text-align:right}
-.bsoe-recommend{font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;text-align:center;margin-top:2px}
 .repeat-box{margin-top:12px;padding:10px 12px;border-radius:10px;
   background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;gap:10px}
 .repeat-icon{font-size:20px;flex-shrink:0}
@@ -235,13 +217,18 @@ function initModelStats(){
 }
 initModelStats();
 
-// COUNTDOWN
+// COUNTDOWN - 已修正慢56秒問題
 function computeEpoch(iso){if(!iso)return 0;return Math.ceil(new Date(iso).getTime()/300000)*300000}
-function getCdSec(){if(!nextDrawEpoch)return 0;let d=Math.round((nextDrawEpoch-Date.now())/1000);if(d<0){nextDrawEpoch+=300000;return 300}return d}
+function getCdSec(){
+  if(!nextDrawEpoch)return 0;
+  let d = Math.round((nextDrawEpoch - Date.now())/1000) + 56; // 修正慢56秒
+  if(d < 0){nextDrawEpoch += 300000; return 300;}
+  return d;
+}
 function fmtCD(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")}
 function startCD(){if(cdInterval)clearInterval(cdInterval);cdInterval=setInterval(()=>{if(!cdEl)return;const s=getCdSec();cdEl.textContent=fmtCD(s);cdEl.className="header-cd"+(s<=30?" urgent":"")},500)}
 
-// UTILS & MODELS
+// UTILS & MODELS (保持不變)
 function normalize(sc){const sum=Object.values(sc).reduce((a,b)=>a+b,0);if(!sum)return uniform();const o={};for(let n=1;n<=10;n++)o[n]=sc[n]/sum;return o}
 function uniform(){const o={};for(let n=1;n<=10;n++)o[n]=0.1;return o}
 function topN(sc,n){return[1,2,3,4,5,6,7,8,9,10].sort((a,b)=>sc[b]-sc[a]).slice(0,n)}
@@ -352,7 +339,7 @@ function mkSel(opts,val,cb){
   s.onchange=()=>cb(s.value);return s;
 }
 
-// RENDER - 已完整修正
+// RENDER
 function render(){
   const app=document.getElementById("app");app.innerHTML="";
   if(!draws.length&&!loadErr){app.innerHTML=`<div class="loading" style="margin-top:80px"><div class="spinner"></div>載入中...</div>`;return}
@@ -393,9 +380,9 @@ function render(){
   cb2.append(cl,mkSel([{v:7,l:"7 個號碼（較寬鬆）"},{v:5,l:"5 個號碼（較精準）"}],selectedCount,v=>{selectedCount=parseInt(v);trainWeights(draws,selectedPos,selectedCount);render()}));
   app.appendChild(cb2);
 
-  // Tabs
+  // Tabs - 已移除模型效能
   const tabs=el("div","tabs");
-  [["predict","📊 預測"],["models","🧠 模型效能"],["history","📋 歷史驗證"]].forEach(([k,l])=>{
+  [["predict","📊 預測"],["history","📋 歷史驗證"]].forEach(([k,l])=>{
     const t=el("div",`tab${tab===k?" active":""}`);t.textContent=l;t.onclick=()=>{tab=k;render()};tabs.appendChild(t);
   });
   app.appendChild(tabs);
@@ -483,47 +470,6 @@ function render(){
       const sc2=el("div","stat-card");sc2.innerHTML=`<div class="stat-val" style="color:${s.c}">${s.v}</div><div class="stat-label">${s.l}</div>`;sr.appendChild(sc2);
     });
     app.appendChild(sr);
-
-  } else if(tab==="models"){
-    // 模型效能（已完整）
-    const mc=el("div","card");
-    mc.innerHTML=`<div style="font-size:14px;font-weight:700;margin-bottom:4px">🧠 模型效能分析</div>
-      <div style="font-size:11px;color:var(--text2);margin-bottom:14px">回測 ${Math.min(draws.length-1,60)} 期・基準線 ${baseline}%・綠色=有效・紅色=已抑制</div>`;
-    const grid=el("div","model-grid");
-    const base=selectedCount/10;
-
-    MODEL_DEFS.forEach(m=>{
-      const {hits,trials}=modelStats[m.key];
-      const bayesAcc=trials>0?(hits+1)/(trials+2):0.5;
-      const accPct=Math.round(bayesAcc*100);
-      const isActive=modelWeights[m.key]>0.02&&trials>=5;
-      const isSuppressed=trials>=5&&bayesAcc<base;
-      const wPct=Math.round(modelWeights[m.key]*100);
-      const barColor=isSuppressed?"#ff4d4d":isActive?"#3ecf6f":"#8b91a8";
-      const badgeColor=isSuppressed?"#3a0f0f":"var(--blue-dim)";
-      const badgeText=isSuppressed?"抑制":"使用";
-      const vsDiff=accPct-baseline;
-      const vsText=trials>=5?(vsDiff>=0?`+${vsDiff}%`:`${vsDiff}%`):"校準中";
-      const vsColor=vsDiff>0?"#3ecf6f":vsDiff<0?"#ff4d4d":"#8b91a8";
-
-      const row=el("div",`model-row${isSuppressed?" suppressed":isActive?" active":""}`);
-      row.innerHTML=`
-        <div class="model-badge" style="background:${badgeColor};color:${isSuppressed?"#ff4d4d":"#4d8aff"}">${badgeText}</div>
-        <div style="flex:1;min-width:0">
-          <div class="model-name">${m.name}</div>
-          <div style="font-size:9px;color:var(--text2)">${m.desc}</div>
-        </div>
-        <div class="model-track"><div class="model-fill" style="width:${Math.min(wPct*3,100)}%;background:${barColor}"></div></div>
-        <div class="model-acc" style="color:${barColor}">${trials>=5?accPct+"%":"?"}</div>
-        <div class="model-vs" style="color:${vsColor}">${vsText}</div>`;
-      grid.appendChild(row);
-    });
-    mc.appendChild(grid);
-    const note=el("div");
-    note.style.cssText="margin-top:14px;padding:10px;background:var(--bg3);border-radius:8px;font-size:11px;color:var(--text2);line-height:1.7";
-    note.innerHTML=`💡 <b style="color:var(--text)">貝葉斯自我淘汰機制</b><br>命中率低於基準線 ${baseline}% 的模型權重自動壓縮至接近零，避免干擾結果。有效模型依超出基準的幅度<sup>1.5</sup>次方加權，表現越好影響越大。`;
-    mc.appendChild(note);
-    app.appendChild(mc);
 
   } else {
     // 歷史驗證
