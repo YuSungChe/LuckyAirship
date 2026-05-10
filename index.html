@@ -43,11 +43,6 @@ body{font-family:"PingFang SC","Noto Sans SC","Helvetica Neue",sans-serif;
 .header-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
 .header-label{font-size:11px;color:var(--text2);letter-spacing:1px;margin-bottom:3px}
 .header-draw{font-size:20px;font-weight:800}
-.header-right{text-align:right}
-.header-cd-label{font-size:10px;color:var(--text2);margin-bottom:2px}
-.header-cd{font-size:32px;font-weight:900;letter-spacing:3px;font-variant-numeric:tabular-nums;color:var(--yellow)}
-.header-cd.urgent{color:var(--red);animation:blink .6s ease-in-out infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
 .balls-row{display:flex;gap:6px;flex-wrap:wrap}
 .ball-sm{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
   font-size:11px;font-weight:800;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.5),inset 0 2px 3px rgba(255,255,255,.2)}
@@ -146,9 +141,6 @@ body{font-family:"PingFang SC","Noto Sans SC","Helvetica Neue",sans-serif;
 </div>
 
 <div id="main-app" style="display:none;width:100%;max-width:430px">
-  <div id="timer-bar" style="display:none;background:#1f1a0a;color:var(--yellow);padding:6px 16px;font-size:12px;font-weight:600;border-bottom:1px solid var(--border);align-items:center;justify-content:space-between">
-    <span>⏱ 訪客模式剩餘：</span><span id="timer-val" style="font-variant-numeric:tabular-nums">60:00</span>
-  </div>
   <div id="app"><div class="loading" style="margin-top:80px"><div class="spinner"></div>載入中...</div></div>
 </div>
 <script>
@@ -194,7 +186,6 @@ function forceLogout(){document.getElementById("main-app").style.display="none";
 // STATE
 let draws=[],tab="predict",selectedPos=0,selectedCount=7;
 let dataInfo={updated:"",source:""},loadOk=false,loadErr=false;
-let cdEl,cdInterval,nextDrawEpoch=0;
 
 const MODEL_DEFS = [
   {key:"m1",      name:"馬可夫一階",   desc:"上期→下期轉移"},
@@ -217,18 +208,7 @@ function initModelStats(){
 }
 initModelStats();
 
-// COUNTDOWN - 已修正慢56秒問題
-function computeEpoch(iso){if(!iso)return 0;return Math.ceil(new Date(iso).getTime()/300000)*300000}
-function getCdSec(){
-  if(!nextDrawEpoch)return 0;
-  let d = Math.round((nextDrawEpoch - Date.now())/1000) + 56; // 修正慢56秒
-  if(d < 0){nextDrawEpoch += 300000; return 300;}
-  return d;
-}
-function fmtCD(s){return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")}
-function startCD(){if(cdInterval)clearInterval(cdInterval);cdInterval=setInterval(()=>{if(!cdEl)return;const s=getCdSec();cdEl.textContent=fmtCD(s);cdEl.className="header-cd"+(s<=30?" urgent":"")},500)}
-
-// UTILS & MODELS (保持不變)
+// UTILS & MODELS (與原版一致)
 function normalize(sc){const sum=Object.values(sc).reduce((a,b)=>a+b,0);if(!sum)return uniform();const o={};for(let n=1;n<=10;n++)o[n]=sc[n]/sum;return o}
 function uniform(){const o={};for(let n=1;n<=10;n++)o[n]=0.1;return o}
 function topN(sc,n){return[1,2,3,4,5,6,7,8,9,10].sort((a,b)=>sc[b]-sc[a]).slice(0,n)}
@@ -323,7 +303,7 @@ async function loadData(silent=false){
     const json=await r.json();if(!json.draws||json.draws.length<3)throw new Error("no data");
     draws=json.draws;dataInfo={updated:json.updated,source:json.source};
     draws.forEach(d=>{if(d.draw_full&&d.draw_full.length>4)d.draw=String(+d.draw_full).slice(-4)});
-    nextDrawEpoch=computeEpoch(json.updated);loadOk=true;loadErr=false;
+    loadOk=true;loadErr=false;
     trainWeights(draws,selectedPos,selectedCount);
   }catch(e){if(!draws.length)loadErr=true}
   render();
@@ -360,9 +340,7 @@ function render(){
   const hdr=el("div","header");
   const htop=el("div","header-top");
   const hl=el("div");hl.innerHTML=`<div class="header-label">168幸運飛艇 · ${POS_NAMES[selectedPos]}預測</div><div class="header-draw">第 ${pNum} 期</div>`;
-  const hr2=el("div","header-right");const cdS=getCdSec();
-  hr2.innerHTML=`<div class="header-cd-label">下期倒計時</div><div class="header-cd${cdS<=30?" urgent":""}" id="cd">${fmtCD(cdS)}</div>`;
-  htop.append(hl,hr2);
+  htop.append(hl);
   const brow=el("div","balls-row");latest.numbers.forEach(n=>brow.appendChild(ballSm(n)));
   hdr.append(htop,brow);app.appendChild(hdr);
 
@@ -380,14 +358,15 @@ function render(){
   cb2.append(cl,mkSel([{v:7,l:"7 個號碼（較寬鬆）"},{v:5,l:"5 個號碼（較精準）"}],selectedCount,v=>{selectedCount=parseInt(v);trainWeights(draws,selectedPos,selectedCount);render()}));
   app.appendChild(cb2);
 
-  // Tabs - 已移除模型效能
+  // Tabs - 新增開獎歷史
   const tabs=el("div","tabs");
-  [["predict","📊 預測"],["history","📋 歷史驗證"]].forEach(([k,l])=>{
+  [["predict","📊 預測"],["historydraw","🎯 開獎歷史"],["history","📋 歷史驗證"]].forEach(([k,l])=>{
     const t=el("div",`tab${tab===k?" active":""}`);t.textContent=l;t.onclick=()=>{tab=k;render()};tabs.appendChild(t);
   });
   app.appendChild(tabs);
 
   if(tab==="predict"){
+    // 預測頁面
     const card=el("div","card");
     const ch=el("div","card-head");
     const chl=el("div");chl.innerHTML=`<div class="card-title">下期${POS_NAMES[selectedPos]}推薦</div><div class="card-draw">第 ${nxtP} 期</div>`;
@@ -414,21 +393,16 @@ function render(){
       card.appendChild(el("div","divider"));
       const bsTitle=el("div","section-label");bsTitle.innerHTML=`🔮 大小單雙預測 <span>（馬可夫轉移）</span>`;card.appendChild(bsTitle);
       const grid=el("div","bsoe-grid");
+      // 改回原本樣式
       const bsWin=bsoe.pBig>=bsoe.pSml?"大":"小",bsC=bsWin==="大"?"#ff4d4d":"#4d8aff";
       const bsc=el("div","bsoe-card");
-      bsc.innerHTML=`<div class="bsoe-row"><span class="bsoe-title">大（6-10）</span></div>
-        <div class="bsoe-row"><div class="bsoe-bar-wrap"><div class="bsoe-bar" style="width:${bsoe.pBig}%;background:#ff4d4d"></div></div><span class="bsoe-pct" style="color:#ff4d4d">${bsoe.pBig}%</span></div>
-        <div class="bsoe-row"><span class="bsoe-title">小（1-5）</span></div>
-        <div class="bsoe-row"><div class="bsoe-bar-wrap"><div class="bsoe-bar" style="width:${bsoe.pSml}%;background:#4d8aff"></div></div><span class="bsoe-pct" style="color:#4d8aff">${bsoe.pSml}%</span></div>
-        <div class="bsoe-recommend" style="background:${bsC}22;color:${bsC};border:1px solid ${bsC}44">推薦：${bsWin}</div>`;
+      bsc.innerHTML=`<div class="bsoe-row"><span class="bsoe-title">大（6-10）</span><span class="bsoe-pct" style="color:#ff4d4d">${bsoe.pBig}%</span></div>
+        <div class="bsoe-row"><span class="bsoe-title">小（1-5）</span><span class="bsoe-pct" style="color:#4d8aff">${bsoe.pSml}%</span></div>`;
       grid.appendChild(bsc);
       const oeWin=bsoe.pOdd>=bsoe.pEve?"單":"雙",oeC=oeWin==="單"?"#ffd166":"#3ecf6f";
       const oec=el("div","bsoe-card");
-      oec.innerHTML=`<div class="bsoe-row"><span class="bsoe-title">單（1,3,5,7,9）</span></div>
-        <div class="bsoe-row"><div class="bsoe-bar-wrap"><div class="bsoe-bar" style="width:${bsoe.pOdd}%;background:#ffd166"></div></div><span class="bsoe-pct" style="color:#ffd166">${bsoe.pOdd}%</span></div>
-        <div class="bsoe-row"><span class="bsoe-title">雙（2,4,6,8,10）</span></div>
-        <div class="bsoe-row"><div class="bsoe-bar-wrap"><div class="bsoe-bar" style="width:${bsoe.pEve}%;background:#3ecf6f"></div></div><span class="bsoe-pct" style="color:#3ecf6f">${bsoe.pEve}%</span></div>
-        <div class="bsoe-recommend" style="background:${oeC}22;color:${oeC};border:1px solid ${oeC}44">推薦：${oeWin}</div>`;
+      oec.innerHTML=`<div class="bsoe-row"><span class="bsoe-title">單（1,3,5,7,9）</span><span class="bsoe-pct" style="color:#ffd166">${bsoe.pOdd}%</span></div>
+        <div class="bsoe-row"><span class="bsoe-title">雙（2,4,6,8,10）</span><span class="bsoe-pct" style="color:#3ecf6f">${bsoe.pEve}%</span></div>`;
       grid.appendChild(oec);
       card.appendChild(grid);
     }
@@ -442,7 +416,7 @@ function render(){
     card.appendChild(repBox);
     app.appendChild(card);
 
-    // Chart
+    // Chart & Stats (保持)
     const cc=el("div","card");
     cc.innerHTML=`<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">綜合機率分佈</div>
       <div style="font-size:11px;color:var(--text2);margin-bottom:12px">有效模型加權後各號碼機率</div>`;
@@ -462,7 +436,6 @@ function render(){
       <div class="legend-dot"><div class="dot" style="background:#2a2d3e;border:1px solid #444"></div>排除</div>`;
     cc.appendChild(leg);app.appendChild(cc);
 
-    // Stats
     const sr=el("div","stats-row");
     [{v:acc+"%",l:"命中率",c:acc>baseline?"#3ecf6f":acc===baseline?"#4d8aff":"#ff4d4d"},
      {v:streak+"期",l:"當前連中",c:"#4d8aff"},
@@ -470,6 +443,23 @@ function render(){
       const sc2=el("div","stat-card");sc2.innerHTML=`<div class="stat-val" style="color:${s.c}">${s.v}</div><div class="stat-label">${s.l}</div>`;sr.appendChild(sc2);
     });
     app.appendChild(sr);
+
+  } else if(tab==="historydraw"){
+    // 新增：開獎歷史 (最近20期)
+    const tw=el("div","table-wrap");
+    const th=el("div","table-head");th.innerHTML=`<span>期號</span><span>開獎號碼</span>`;tw.appendChild(th);
+    const limit = Math.min(20, draws.length);
+    for(let i=0; i<limit; i++){
+      const d = draws[i];
+      const dn = d.draw_full?String(+d.draw_full).slice(-4):d.draw;
+      const tr=el("div","table-row");
+      const td1=el("div");td1.innerHTML=`<div class="row-draw">${dn}</div>`;
+      const td2=el("div","row-balls");
+      d.numbers.forEach(n=>td2.appendChild(ballSm(n)));
+      tr.append(td1,td2);tw.appendChild(tr);
+    }
+    const tf=el("div","table-foot");tf.textContent=`最近 ${limit} 期開獎紀錄`;tw.appendChild(tf);
+    app.appendChild(tw);
 
   } else {
     // 歷史驗證
@@ -495,7 +485,6 @@ function render(){
   }
 
   app.appendChild(el("div","spacer"));
-  cdEl=document.getElementById("cd");startCD();
 }
 
 let refreshing=false;
